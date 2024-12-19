@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  streamlit:
+    build: .
+    container_name: sentiment-analysis-streamlit
+    ports:
+      - "8503:8501"
+    volumes:
+      - .:/app
