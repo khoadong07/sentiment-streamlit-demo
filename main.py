@@ -73,6 +73,7 @@ def analyze_with_model(df_filtered, model_name, model_path, num_rows):
 
 # List of predefined models
 models = {
+    "lastest": 'Khoa/sentiment-analysis-all-category-122024.6',
     "v122024.5": 'Khoa/sentiment-analysis-all-category-122024.5',
     "v122024.4": 'Khoa/sentiment-analysis-all-category-122024.4',
     "v122024.3": 'Khoa/sentiment-analysis-all-category-122024.3',
