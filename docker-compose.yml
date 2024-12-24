@@ -3,7 +3,7 @@ version: '3.8'
 services:
   streamlit:
     build: .
-    container_name: sentiment-analysis-streamlit
+    container_name: sentiment-analysis-streamlit-new
     ports:
       - "8503:8501"
     volumes:
