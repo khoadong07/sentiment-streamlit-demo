@@ -8,11 +8,4 @@ services:
       - "8504:8501"
     volumes:
       - .:/app
-    networks:
-      ai-network:
-        ipv4_address: "170.20.0.2"
 
-networks:
-  ai-network:
-    external:
-      name: ai-network
