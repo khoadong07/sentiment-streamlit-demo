@@ -16,6 +16,8 @@ COPY . .
 # Expose the Streamlit port
 EXPOSE 8501
 
+COPY .streamlit /root/.streamlit/
+
 # Run Streamlit
 ENTRYPOINT ["streamlit", "run"]
 
