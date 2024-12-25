@@ -4,8 +4,13 @@ services:
   streamlit_new:
     build: .
     container_name: sentiment-analysis-streamlit-new
-    ports:
-      - "8503:8501"
     volumes:
       - .:/app
+    networks:
+      ai-network:
+        ipv4_address: "170.20.0.9"
 
+networks:
+  ai-network:
+    external:
+      name: ai-network
