@@ -4,6 +4,8 @@ services:
   streamlit_new:
     build: .
     container_name: sentiment-analysis-streamlit-new
+    ports:
+      - "8503:8501"
     volumes:
       - .:/app
     networks:
