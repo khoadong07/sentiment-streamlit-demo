@@ -6,7 +6,6 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification, Auto
 import time
 from io import BytesIO
 
-st.set_option('server.port', 8501)
 st.set_option('server.enableCORS', False)
 
 # Function to export DataFrame to Excel
