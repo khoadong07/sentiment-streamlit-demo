@@ -1,23 +1,23 @@
-# Use the official Python base image
-FROM python:3.9.19-slim-bullseye
+# Sử dụng NVIDIA PyTorch image (có sẵn CUDA, cuDNN, PyTorch GPU)
+FROM nvcr.io/nvidia/pytorch:23.10-py3
 
-# Set the working directory
+# Đặt working directory
 WORKDIR /app
 
-# Copy the requirements.txt file
+# Copy requirements trước để cache layer
 COPY requirements.txt .
 
-# Install the dependencies
+# Cài các dependency
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code
+# Copy toàn bộ code
 COPY . .
 
-# Expose the Streamlit port
+# Mở port Streamlit
 EXPOSE 8501
 
 # Run Streamlit
 ENTRYPOINT ["streamlit", "run"]
 
-# Set the default Streamlit application to run
+# File mặc định
 CMD ["main.py"]
