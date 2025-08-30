@@ -124,8 +124,8 @@ with st.sidebar:
     st.header("Model Configuration")
     project = st.selectbox("Select Model", list(models.keys()))
     uploaded_file = st.file_uploader("Upload CSV or XLSX file", type=["csv", "xlsx"])
-    num_rows = st.number_input("Number of rows to process", min_value=1, value=20)
-    batch_size = st.number_input("Batch size (GPU)", min_value=1, value=32, step=1)
+    num_rows = st.number_input("Number of rows to process", min_value=1, value=100)
+    batch_size = st.number_input("Batch size (GPU)", min_value=1, value=16, step=1)
 
 # Custom CSS
 st.markdown("""
