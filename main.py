@@ -156,9 +156,40 @@ if uploaded_file is not None:
         df = df.dropna(subset=['Content'])
         df = df.head(num_rows)
 
+        # if 'Sentiment' in df.columns:
+        #     df.insert(df.columns.get_loc('Sentiment') + 1, 'Sentiment By AI', None)
+        #     df_filtered = df[['Id', 'Content', 'Sentiment', 'Sentiment By AI']]
+
+        #     data_json = df_filtered.to_dict(orient='records')
+        #     with st.expander("Show JSON Data", expanded=False):
+        #         st.json(data_json)
+
+        #     if st.button('Run Sentiment Analysis'):
+        #         selected_model_path = models[project]
+        #         df_result = analyze_with_model(df_filtered, selected_model_path, num_rows, batch_size=batch_size)
+
+        #         st.subheader("Sentiment Analysis Results")
+        #         st.dataframe(df_result)
+
+        #         xlsx_data = export_to_excel(df_result)
+        #         st.download_button(
+        #             label="Download Excel file",
+        #             data=xlsx_data,
+        #             file_name=f"export-{time.time()}.xlsx",
+        #             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        #         )
+        # else:
+        #     st.error('File does not contain the "Sentiment" column.')
+
         if 'Sentiment' in df.columns:
-            df.insert(df.columns.get_loc('Sentiment') + 1, 'Sentiment By AI', None)
-            df_filtered = df[['Id', 'Content', 'Sentiment', 'Sentiment By AI']]
+            # Thêm cột "Sentiment By AI" ngay sau cột "Sentiment" nếu chưa có
+            if 'Sentiment By AI' not in df.columns:
+                df.insert(df.columns.get_loc('Sentiment') + 1, 'Sentiment By AI', None)
+
+            # Chỉ lấy các cột có tồn tại để tránh lỗi IndexError/KeyError
+            expected_cols = ['Id', 'Content', 'Sentiment', 'Sentiment By AI']
+            existing_cols = [col for col in expected_cols if col in df.columns]
+            df_filtered = df[existing_cols]
 
             data_json = df_filtered.to_dict(orient='records')
             with st.expander("Show JSON Data", expanded=False):
@@ -180,6 +211,7 @@ if uploaded_file is not None:
                 )
         else:
             st.error('File does not contain the "Sentiment" column.')
+
     else:
         st.error('File does not contain the "Content" column.')
 else:
