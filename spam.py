@@ -91,7 +91,7 @@ with st.sidebar:
     st.header("⚙️ Configuration")
     spam_api = st.text_input("Spam API URL", "http://103.232.122.6:5004/predict")
     ads_api = st.text_input("Ads API URL", "http://103.232.122.6:5005/predict")
-    category = st.text_input("Category", "energy_fuels")
+    category = st.text_input("Category", "fmcg")
     batch_size = st.number_input("Batch size", min_value=100, value=1000, step=100)
     max_workers_spam = st.number_input("Max workers (Spam API)", min_value=1, value=10, step=1)
     max_workers_ads = st.number_input("Max workers (Ads API)", min_value=1, value=10, step=1)
