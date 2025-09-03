@@ -16,7 +16,6 @@ def export_to_excel(dataframe):
     output.seek(0)
     return output.getvalue()
 
-
 # =========================
 # Label mapping
 # =========================
@@ -26,34 +25,38 @@ label_mapping = {
     'NEU': 'Neutral'
 }
 
-
 # =========================
-# Function: Analyze with Model (optimized for GPU V100)
+# Function: Load model
 # =========================
 @st.cache_resource  # cache model để không load lại nhiều lần
 def load_model(model_path):
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     config = AutoConfig.from_pretrained(model_path)
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     model = AutoModelForSequenceClassification.from_pretrained(
         model_path,
-        torch_dtype=torch.float16  # ép dùng half precision
-    ).to("cuda")
+        torch_dtype=torch.float16 if device == "cuda" else torch.float32
+    ).to(device)
+
     model.eval()
-    # compile nếu có torch >= 2.0
-    if hasattr(torch, "compile"):
+    if hasattr(torch, "compile"):  # compile nếu torch >= 2.0
         model = torch.compile(model)
-    return tokenizer, config, model
+    return tokenizer, config, model, device
 
-
+# =========================
+# Function: Analyze with Model
+# =========================
 def analyze_with_model(df_filtered, model_path, num_rows, batch_size=32):
-    tokenizer, config, model = load_model(model_path)
+    tokenizer, config, model, device = load_model(model_path)
 
     progress_bar = st.progress(0)
     status_text = st.empty()
-
     start_time = time.time()
 
     texts = df_filtered["Content"].tolist()
+    if "Id" not in df_filtered.columns:
+        df_filtered["Id"] = range(1, len(df_filtered) + 1)
     ids = df_filtered["Id"].tolist()
 
     all_raw_predicts = []
@@ -68,7 +71,7 @@ def analyze_with_model(df_filtered, model_path, num_rows, batch_size=32):
             truncation=True,
             padding=True,
             max_length=512
-        ).to("cuda")
+        ).to(device)
 
         with torch.inference_mode():
             outputs = model(**inputs)
@@ -89,6 +92,9 @@ def analyze_with_model(df_filtered, model_path, num_rows, batch_size=32):
         progress_bar.progress(min((i + batch_size) / num_rows, 1.0))
         status_text.text(f"Processing {min(i + batch_size, num_rows)}/{num_rows}")
 
+        if device == "cuda":
+            torch.cuda.empty_cache()
+
     df_filtered["Raw Predict"] = all_raw_predicts
     df_filtered["Sentiment By AI"] = all_sentiment_by_ai
 
@@ -96,7 +102,6 @@ def analyze_with_model(df_filtered, model_path, num_rows, batch_size=32):
     st.write(f"Processing Time: {elapsed_time:.2f} seconds")
 
     return df_filtered
-
 
 # =========================
 # Model list
@@ -112,7 +117,6 @@ models = {
     "v122024": 'Khoa/sentiment-analysis-all-category-122024'
 }
 
-
 # =========================
 # Streamlit App
 # =========================
@@ -124,23 +128,7 @@ with st.sidebar:
     st.header("Model Configuration")
     project = st.selectbox("Select Model", list(models.keys()))
     uploaded_file = st.file_uploader("Upload CSV or XLSX file", type=["csv", "xlsx"])
-    num_rows = st.number_input("Number of rows to process", min_value=1, value=100)
-    batch_size = st.number_input("Batch size (GPU)", min_value=1, value=16, step=1)
-
-# Custom CSS
-st.markdown("""
-    <style>
-    .css-1d391kg {
-        background-color: #ffffff;
-    }
-    .css-1d391kg .sidebar .sidebar-content {
-        background-color: #F5F8FA;
-    }
-    .css-1d391kg .block-container {
-        background-color: #ffffff;
-    }
-    </style>
-""", unsafe_allow_html=True)
+    batch_size = st.number_input("Batch size", min_value=1, value=16, step=1)
 
 # Title
 st.title("AI-Driven Sentiment Explorer")
@@ -154,44 +142,18 @@ if uploaded_file is not None:
 
     if 'Content' in df.columns:
         df = df.dropna(subset=['Content'])
-        df = df.head(num_rows)
-
-        # if 'Sentiment' in df.columns:
-        #     df.insert(df.columns.get_loc('Sentiment') + 1, 'Sentiment By AI', None)
-        #     df_filtered = df[['Id', 'Content', 'Sentiment', 'Sentiment By AI']]
-
-        #     data_json = df_filtered.to_dict(orient='records')
-        #     with st.expander("Show JSON Data", expanded=False):
-        #         st.json(data_json)
-
-        #     if st.button('Run Sentiment Analysis'):
-        #         selected_model_path = models[project]
-        #         df_result = analyze_with_model(df_filtered, selected_model_path, num_rows, batch_size=batch_size)
-
-        #         st.subheader("Sentiment Analysis Results")
-        #         st.dataframe(df_result)
-
-        #         xlsx_data = export_to_excel(df_result)
-        #         st.download_button(
-        #             label="Download Excel file",
-        #             data=xlsx_data,
-        #             file_name=f"export-{time.time()}.xlsx",
-        #             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        #         )
-        # else:
-        #     st.error('File does not contain the "Sentiment" column.')
 
         if 'Sentiment' in df.columns:
-            # Thêm cột "Sentiment By AI" ngay sau cột "Sentiment" nếu chưa có
             if 'Sentiment By AI' not in df.columns:
                 df.insert(df.columns.get_loc('Sentiment') + 1, 'Sentiment By AI', None)
 
-            # Chỉ lấy các cột có tồn tại để tránh lỗi IndexError/KeyError
             expected_cols = ['Id', 'Content', 'Sentiment', 'Sentiment By AI']
             existing_cols = [col for col in expected_cols if col in df.columns]
             df_filtered = df[existing_cols]
 
             data_json = df_filtered.to_dict(orient='records')
+            num_rows = len(df_filtered)
+
             with st.expander("Show JSON Data", expanded=False):
                 st.json(data_json)
 
@@ -206,12 +168,11 @@ if uploaded_file is not None:
                 st.download_button(
                     label="Download Excel file",
                     data=xlsx_data,
-                    file_name=f"export-{time.time()}.xlsx",
+                    file_name=f"sentiment_results_{project}_{int(time.time())}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
         else:
             st.error('File does not contain the "Sentiment" column.')
-
     else:
         st.error('File does not contain the "Content" column.')
 else:
