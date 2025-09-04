@@ -48,6 +48,7 @@ def load_model(model_path):
 # Function: Analyze with Model
 # =========================
 def analyze_with_model(df_filtered, model_path, num_rows, batch_size=32):
+    
     tokenizer, config, model, device = load_model(model_path)
 
     progress_bar = st.progress(0)
