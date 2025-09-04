@@ -3,6 +3,7 @@ import argparse
 import pandas as pd
 import numpy as np
 import torch
+import asyncio
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoConfig
 from tqdm import tqdm
 
@@ -32,41 +33,69 @@ def load_model(model_path):
         model = torch.compile(model)
     return tokenizer, config, model, device
 
+
 # =========================
-# Batch inference
+# Call inference cho 1 text
 # =========================
-def batch_inference(texts, tokenizer, config, model, device, batch_size=32):
-    all_results = []
+async def call_inference(text: str, tokenizer, config, model, device):
+    inputs = tokenizer(
+        text,
+        return_tensors="pt",
+        truncation=True,
+        padding=True,
+        max_length=512
+    ).to(device)
+
     with torch.inference_mode():
-        for i in range(0, len(texts), batch_size):
-            batch_texts = texts[i:i+batch_size]
+        outputs = model(**inputs)
+        scores = torch.nn.functional.softmax(outputs.logits, dim=-1).cpu().numpy()[0]
 
-            inputs = tokenizer(
-                batch_texts,
-                return_tensors="pt",
-                truncation=True,
-                padding=True,
-                max_length=512
-            ).to(device, non_blocking=True)
+    ranking = np.argsort(scores)[::-1]
+    top_label_id = ranking[0]
+    original_label = config.id2label[top_label_id]
+    mapped_label = label_mapping.get(original_label, original_label)
+    confidence = float(np.round(scores[top_label_id], 4))
 
-            outputs = model(**inputs)
-            scores = torch.nn.functional.softmax(outputs.logits, dim=-1).cpu().numpy()
+    return mapped_label, confidence
 
-            for score in scores:
-                top_id = np.argmax(score)
-                original_label = config.id2label[top_id]
-                mapped_label = label_mapping.get(original_label, original_label)
-                all_results.append(mapped_label)
-    return all_results
+
+# =========================
+# Rule-based process 1 item
+# =========================
+async def process_item(item: dict, tokenizer, config, model, device):
+    content = str(item.get("Content", "") or "")
+    title = str(item.get("Title", "") or "")
+    description = str(item.get("Description", "") or "")
+    item_type = str(item.get("Type", "") or "")
+
+    is_meaningless = not any(c.isalnum() for c in content)
+
+    if is_meaningless:
+        if item_type in ["fbPageTopic", "fbGroupTopic", "fbUserTopic"]:
+            text = f"{title} {description} {content}"
+            sentiment, confidence = await call_inference(text, tokenizer, config, model, device)
+        else:
+            sentiment = "Neutral"
+            text = content
+            confidence = 1.0
+    else:
+        text = content
+        sentiment, confidence = await call_inference(content, tokenizer, config, model, device)
+
+    item["Sentiment By AI"] = sentiment
+    item["Confidence"] = confidence
+    item["ProcessedText"] = text
+    return item
+
 
 # =========================
 # Process file
 # =========================
-def process_file(input_path: str, output_path: str, tokenizer, config, model, device, batch_size=32):
+async def process_file(input_path: str, output_path: str, tokenizer, config, model, device):
     df = pd.read_excel(input_path) if input_path.endswith(".xlsx") else pd.read_csv(input_path)
 
     if "is_spam" not in df.columns or "label" not in df.columns:
-        print(f"⚠️ File {input_path} thiếu cột is_spam hoặc label, bỏ qua.")
+        print(f"⚠️ File {input_path} thiếu cột is_spam hoặc Label, bỏ qua.")
         return
 
     df_filtered = df[(df["is_spam"] == False) | (df["label"].str.strip().str.lower() == "rao vặt")]
@@ -79,44 +108,30 @@ def process_file(input_path: str, output_path: str, tokenizer, config, model, de
         print(f"⚠️ File {input_path} không có record hợp lệ, bỏ qua.")
         return
     
-    # Chuẩn bị text để inference
-    texts = []
-    for _, row in df_filtered.iterrows():
-        content = str(row.get("Content", "") or "")
-        title = str(row.get("Title", "") or "")
-        description = str(row.get("Description", "") or "")
-        item_type = str(row.get("Type", "") or "")
+    records = df_filtered.to_dict(orient="records")
 
-        is_meaningless = not any(c.isalnum() for c in content)
+    results = []
+    for item in tqdm(records, desc=f"Processing {os.path.basename(input_path)}", unit="record"):
+        res = await process_item(item, tokenizer, config, model, device)
+        results.append(res)
 
-        if is_meaningless:
-            if item_type in ["fbPageTopic", "fbGroupTopic", "fbUserTopic"]:
-                text = f"{title} {description} {content}"
-            else:
-                text = content
-        else:
-            text = content
+    if not results:
+        print(f"⚠️ File {input_path} không có record hợp lệ.")
+        return
 
-        texts.append(text)
-
-    # Batch inference
-    sentiments = batch_inference(texts, tokenizer, config, model, device, batch_size)
-
-    # Thêm cột sentiment_by_ai (giữ nguyên input)
-    df.loc[df_filtered.index, "sentiment_by_ai"] = sentiments
-
-    # Save
+    df_result = pd.DataFrame(results)
     if output_path.endswith(".xlsx"):
-        df.to_excel(output_path, index=False)
+        df_result.to_excel(output_path, index=False)
     else:
-        df.to_csv(output_path, index=False)
+        df_result.to_csv(output_path, index=False)
 
-    print(f"✅ Done. Saved {len(df)} rows to {output_path}")
+    print(f"✅ Done. Saved {len(results)} rows to {output_path}")
+
 
 # =========================
 # Main
 # =========================
-def main(input_dir, output_dir, model_path, batch_size=32):
+async def main(input_dir, output_dir, model_path):
     os.makedirs(output_dir, exist_ok=True)
 
     tokenizer, config, model, device = load_model(model_path)
@@ -129,14 +144,14 @@ def main(input_dir, output_dir, model_path, batch_size=32):
     for file in files:
         input_path = os.path.join(input_dir, file)
         output_path = os.path.join(output_dir, f"sentiment_{file}")
-        process_file(input_path, output_path, tokenizer, config, model, device, batch_size)
+        await process_file(input_path, output_path, tokenizer, config, model, device)
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Batch sentiment analysis (GPU optimized)")
+    parser = argparse.ArgumentParser(description="Batch sentiment analysis")
     parser.add_argument("--input", required=True, help="Input folder")
     parser.add_argument("--output", required=True, help="Output folder")
     parser.add_argument("--model", default="Khoa/sentiment-analysis-all-category-122024.8", help="Model path")
-    parser.add_argument("--batch_size", type=int, default=32, help="Batch size for GPU inference")
     args = parser.parse_args()
 
-    main(args.input, args.output, args.model, args.batch_size)
+    asyncio.run(main(args.input, args.output, args.model))
